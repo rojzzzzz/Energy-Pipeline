@@ -1,0 +1,253 @@
+contract:
+  name: data_sources_contract
+  version: "1.0"
+
+  owner:
+    name: Roberto Jerez
+    contact: jerezrobertojose@gmail.com
+
+  sources:
+    files:
+      - name: pjm_forecast_accuracy
+        files:
+          - pjm_forecast_accuracy.xlsx
+        connection:
+          format: xlsx
+          sheet: "DOM"
+
+        silver:
+          schema:
+            - name: Zone
+              type: string
+              nullable: false
+            - name: Year
+              type: int
+              nullable: false
+            - name: Metric
+              type: string
+              nullable: false
+            - name: "Load MW"
+              type: float
+              nullable: false
+          
+          keys:
+            - Zone
+            - Year
+            - Metric
+          
+          quality:
+            completeness:
+              columns: ["Zone", "Year", "Metric", "Load MW"]
+              threshold: 0.95
+            
+            uniqueness:
+              columns: ["Zone", "Year", "Metric"]
+              threshold: 0.90
+                      
+            expectations:
+              - type: expect_table_row_count_to_be_between
+                kwargs:
+                  min_value: 86
+                  max_value: 86
+              - type: expect_column_values_to_be_in_set
+                kwargs: {column: Zone, value_set: [VEPCO]}
+              - type: expect_column_values_to_be_between
+                kwargs:
+                  column: "Load MW"
+                  min_value: 0
+              - type: expect_table_column_count_to_equal
+                kwargs:
+                  value: 4
+              - type: expect_column_values_to_be_between
+                kwargs:
+                  column: Year
+                  min_value: 2014
+                  max_value: 2050
+            
+ 
+      - name: noaa_GHCNh
+        files:
+          - noaa_GHCNh_file_2024.psv
+          - noaa_GHCNh_files_2025.psv
+          - noaa_GHCNh_files_2026.psv
+        
+        connection:
+          format: psv
+        
+        silver:
+          schema:
+            - name: STATION
+              type: string
+              nullable: false
+            - name: DATE
+              type: datetime
+              nullable: false
+            - name: LATITUDE
+              type: float
+              nullable: false
+            - name: LONGITUDE
+              type: float
+              nullable: false
+            - name: temperature
+              type: float
+              nullable: true
+            - name: dew_point_temperature
+              type: float
+              nullable: true
+            - name: relative_humidity
+              type: float
+              nullable: true
+            - name: wind_speed
+              type: float
+              nullable: true
+            - name: precipitation
+              type: float
+              nullable: true
+
+          keys:
+            - STATION
+            - DATE
+
+          quality:
+            completeness:
+              threshold: 0.61
+            
+            uniqueness:
+              columns: ["STATION", "DATE"]
+              threshold: 0.9
+                        
+            expectations:
+              - type: expect_column_values_to_be_in_set
+                kwargs: {column: STATION, value_set: [USW00093738]}
+              - type: expect_column_values_to_be_between
+                kwargs: {column: LATITUDE, min_value: -90, max_value: 90}
+              - type: expect_column_values_to_be_between
+                kwargs: {column: LONGITUDE, min_value: -180, max_value: 180}
+              - type: expect_column_values_to_be_between
+                kwargs: {column: relative_humidity, min_value: 0, max_value: 100}
+              - type: expect_column_values_to_be_between
+                kwargs: {column: wind_speed, min_value: 0}
+              - type: expect_column_values_to_be_between
+                kwargs: {column: precipitation, min_value: 0}
+    
+    api:
+      - name: monthly_va_residential_price
+        files:
+          - monthly_va_residential_price.jsonl
+        
+        raw:
+          schema:
+            - name: period
+            - name: stateid
+            - name: stateDescription
+            - name: sectorid
+            - name: sectorName
+            - name: price
+            - name: 'price-units'
+            - name: '_ingested_at'
+            - name: '_window_start'
+            - name: '_window_end'
+        
+        silver:
+          schema:
+            - name: period
+              type: date
+
+            - name: stateid
+              type: string
+
+            - name: sectorid
+              type: string
+
+            - name: price
+              type: float
+
+            - name: 'price-units'
+              type: string
+          
+          keys:
+            - period
+            - stateid
+            - sectorid
+          
+          quality:
+              completeness:
+                columns: ["period", "stateid", "sectorid", "price"]
+                threshold: 0.95
+              uniqueness:
+                columns: ["period", "stateid", "sectorid"]
+                threshold: 0.9
+
+              expectations:
+                - type: expect_column_values_to_be_in_set
+                  kwargs: {column: stateid, value_set: [VA]}
+                - type: expect_column_values_to_be_in_set
+                  kwargs: {column: sectorid, value_set: [RES]}
+                - type: expect_column_values_to_be_in_set
+                  kwargs: {column: price-units, value_set: [cents per kilowatt-hour]}
+                - type: expect_column_values_to_be_between
+                  kwargs:
+                    column: price
+                    min_value: 0
+                    max_value: 100
+      
+      - name: hourly_pjm_dom_demand
+        files:
+          - 'hourly_pjm_dom_demand.jsonl'
+        
+        raw:
+          schema:
+            - name: period
+            - name: subba
+            - name: subba-name
+            - name: parent
+            - name: 'parent-name'
+            - name: value
+            - name: 'value-units'
+            - name: '_ingested_at'
+            - name: '_window_start'
+            - name: '_window_end'
+        
+        silver:
+          schema:
+            - name: period
+              type: datetime
+
+            - name: subba
+              type: string
+
+            - name: parent
+              type: string
+
+            - name: value
+              type: float
+
+            - name: "value-units"
+              type: string
+          
+          keys: ["period", "subba", "parent"]
+
+          quality:
+            completeness:
+              columns: ["period", "subba", "value", "value-units"]
+              threshold: 0.95
+
+            uniqueness:
+              columns: ["period", "subba", "parent"]
+              threshold: 0.9
+          
+            expectations:
+              - type: expect_column_values_to_be_in_set
+                kwargs: {column: parent, value_set: [PJM]}
+
+              - type: expect_column_values_to_be_in_set
+                kwargs: {column: subba, value_set: [DOM]}
+
+              - type: expect_column_values_to_be_in_set
+                kwargs: {column: value-units, value_set: [megawatthours]}
+
+              - type: expect_column_values_to_be_between
+                kwargs:
+                  column: value
+                  min_value: 0
+                  max_value: 50000

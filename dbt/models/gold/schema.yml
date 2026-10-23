@@ -1,0 +1,81 @@
+version: 2
+
+models:
+  - name: mart_dom_hourly_augmented
+    description: One row per PJM DOM UTC hour, built directly from silver demand, Dulles weather, and Virginia residential prices. Interior demand gaps remain null. Retrospective analysis only.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat(area_key, '|', cast(interval_start_utc as string))"
+    columns:
+      - name: area_key
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [PJM_DOM]
+      - name: interval_start_utc
+        description: EIA's hour-ending timestamp minus one hour, stored as UTC TIMESTAMP_NTZ.
+        data_tests: [not_null]
+      - name: interval_end_utc
+        data_tests: [not_null]
+      - name: local_date
+        description: Date of the interval start in America/New_York; also determines the price month.
+        data_tests: [not_null]
+      - name: local_hour
+        data_tests: [not_null]
+      - name: utc_offset_minutes
+        description: Local time minus UTC; distinguishes repeated local hours at the end of daylight saving.
+        data_tests: [not_null]
+      - name: is_weekend
+        data_tests: [not_null]
+      - name: demand_mwh
+        description: Energy over the hour. Sum across nonoverlapping intervals; missing demand is not zero.
+      - name: average_load_mw
+        description: Demand MWh divided by the one-hour duration. Average or take a maximum; do not sum across hours.
+      - name: station_key
+        description: Dulles station USW00093738, used as a weather proxy for DOM.
+      - name: temperature_c
+        description: Unweighted mean of available temperature observations within the UTC hour.
+      - name: weather_observation_count
+        description: Number of weather reports in the hour, including reports without temperature.
+      - name: temperature_observation_count
+        description: Number of reports with non-null temperature.
+      - name: va_residential_price_cents_per_kwh
+        description: Monthly Virginia residential price context, repeated hourly. Never sum or treat as a DOM-wide or data-center tariff.
+      - name: demand_missing
+        data_tests: [not_null]
+      - name: weather_missing
+        description: No weather reports for this hour; temperature_missing also catches reports with null temperatures.
+        data_tests: [not_null]
+      - name: temperature_missing
+        data_tests: [not_null]
+      - name: price_missing
+        data_tests: [not_null]
+
+  - name: mart_july_peak_forecast_accuracy
+    description: One source zone, target year, and forecast vintage, built directly from the silver workbook table. Actuals repeat across vintages and must not be summed.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "concat(source_zone, '|', cast(target_year as string), '|', cast(forecast_vintage_year as string))"
+    columns:
+      - name: source_zone
+        data_tests: [not_null]
+      - name: target_year
+        data_tests: [not_null]
+      - name: forecast_vintage_year
+        data_tests: [not_null]
+      - name: horizon_years
+        description: Target year minus forecast vintage year.
+        data_tests: [not_null]
+      - name: forecast_peak_mw
+        data_tests: [not_null]
+      - name: actual_peak_mw
+        description: Workbook historical July peak for the same zone and target year; null when unavailable.
+      - name: error_mw
+        description: Forecast minus actual. Positive means overforecasting.
+      - name: error_pct
+        description: 100 * (forecast - actual) / actual; null when actual is missing or zero.
+      - name: absolute_error_pct
+        description: Absolute percentage error, with the same missing/zero handling.

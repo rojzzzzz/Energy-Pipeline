@@ -1,0 +1,41 @@
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env-example
+
+# Python environments and generated files
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+
+# Local source data, extraction checkpoints, and validation reports
+data/raw/
+data/config/eia_state.json
+data/validation/
+
+# Runtime logs and dbt build artifacts
+logs/
+*.log
+dbt/target/
+dbt/dbt_packages/
+dbt/dbt_internal_packages/
+.user.yml
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

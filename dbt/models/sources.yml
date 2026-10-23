@@ -1,0 +1,68 @@
+version: 2
+
+sources:
+  - name: silver
+    description: Validated tables loaded by the Python ingestion pipeline.
+    database: "{{ env_var('DATABRICKS_CATALOG', target.database) }}"
+    schema: "{{ env_var('DATABRICKS_SCHEMA', 'silver') }}"
+    tables:
+      - name: hourly_pjm_dom_demand
+        data_tests:
+          - unique:
+              arguments:
+                column_name: "concat(parent, '|', subba, '|', cast(period as string))"
+        columns:
+          - name: parent
+            data_tests: [not_null]
+          - name: subba
+            data_tests: [not_null]
+          - name: period
+            data_tests: [not_null]
+          - name: value-units
+            quote: true
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [megawatthours]
+      - name: noaa_GHCNh
+        data_tests:
+          - unique:
+              arguments:
+                column_name: "concat(STATION, '|', cast(DATE as string))"
+        columns:
+          - name: STATION
+            data_tests: [not_null]
+          - name: DATE
+            data_tests: [not_null]
+      - name: monthly_va_residential_price
+        data_tests:
+          - unique:
+              arguments:
+                column_name: "concat(stateid, '|', sectorid, '|', cast(period as string))"
+        columns:
+          - name: stateid
+            data_tests: [not_null]
+          - name: sectorid
+            data_tests: [not_null]
+          - name: period
+            data_tests: [not_null]
+          - name: price-units
+            quote: true
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [cents per kilowatt-hour]
+      - name: pjm_forecast_accuracy
+        data_tests:
+          - unique:
+              arguments:
+                column_name: "concat(Zone, '|', cast(Year as string), '|', Metric)"
+        columns:
+          - name: Zone
+            data_tests: [not_null]
+          - name: Year
+            data_tests: [not_null]
+          - name: Metric
+            data_tests: [not_null]

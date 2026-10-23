@@ -1,0 +1,43 @@
+eia_config:
+  base_url: "https://api.eia.gov/v2"
+  timeout_seconds: 30
+  max_retries: 3
+
+  datasets:
+    hourly_pjm_dom_demand:
+      name: "EIA Regional Electricity Demand"
+      description: "Hourly electricity demand for PJM / DOM subregion"
+      endpoint: "electricity/rto/region-sub-ba-data/data/"
+
+      ingestion:
+        initial_start: "2023-01-01T00"
+        window: month
+        overlap: 48
+        page_size: 5000
+      
+      params:
+        frequency: hourly
+        "data[]": value
+        "facets[parent][]": PJM
+        "facets[subba][]": DOM
+        "sort[0][column]": period
+        "sort[0][direction]": asc
+
+    monthly_va_residential_price:
+      name: "EIA Retail Electricity Prices"
+      description: "Monthly residential electricity price for Virginia"
+      endpoint: "electricity/retail-sales/data/"
+
+      ingestion:
+        initial_start: "2023-01"
+        window: year
+        overlap: 1
+        page_size: 5000
+
+      params:
+        frequency: monthly
+        "data[]": price
+        "facets[stateid][]": VA
+        "facets[sectorid][]": RES
+        "sort[0][column]": period
+        "sort[0][direction]": asc

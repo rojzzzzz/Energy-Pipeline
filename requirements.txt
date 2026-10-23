@@ -1,0 +1,16 @@
+# Airflow and Python pipeline dependencies, matching Dockerfile pins.
+# Use Python 3.12 to match the container runtime.
+apache-airflow==3.3.2
+pandas==3.1.0
+great-expectations==1.24.0
+httpx==0.28.1
+PyYAML==6.0.3
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.4
+openpyxl==3.1.5
+databricks-sql-connector==4.4.0
+pendulum==3.3.0
+
+# Install dbt in its own virtual environment, as Dockerfile does:
+# python -m venv .venv-dbt
+# .venv-dbt/bin/pip install dbt-core==1.12.5 dbt-databricks==1.12.7
