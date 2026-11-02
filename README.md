@@ -1,4 +1,5 @@
 # Virginia Energy Data Pipeline
+[![CI](https://github.com/rojzzzzz/Energy-Pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/rojzzzzz/Energy-Pipeline/actions/workflows/ci.yml)
 
 This project brings together electricity demand, weather, prices, and load forecasts to explore how demand changes in the PJM Dominion region. 
 
