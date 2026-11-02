@@ -68,3 +68,14 @@ To stop the local services while keeping their stored data:
 ```bash
 docker compose down
 ```
+
+## Tests
+
+With Python 3.12, install the dependencies and run from the repository root:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pytest
+```
+
+See [tests/README.md](tests/README.md) for test scope and commands for each suite.
