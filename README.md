@@ -43,7 +43,7 @@ The results also explain the scope of each dataset. Regional demand does not iso
 
 You'll need Docker with Docker Compose, an EIA API key, and a Databricks SQL warehouse with access to create and update the project's tables. Run the commands from the repository root.
 
-1. Copy `.env-example` to `.env`. Set `EIA_KEY`, `DATABRICKS_KEY`, `DATABRICKS_HOSTNAME`, and `DATABRICKS_HTTP`. Add `DATABRICKS_CATALOG`, `DATABRICKS_SCHEMA` (for example, `silver`), and `METABASE_DB_PASSWORD`, which are required but missing from the example file. On Linux or WSL, set `AIRFLOW_UID` to the output of `id -u`.
+1. Copy `.env-example` to `.env`. On Linux or WSL, set `AIRFLOW_UID` to the output of `id -u`.
 
 2. Place the NOAA files and PJM workbook listed in the [data contract](data/config/data_contract.yml) in `data/raw/`. Keep the EIA raw files and `data/config/eia_state.json` together when resuming an extraction. For a fresh backfill, start without the checkpoint file.
 
