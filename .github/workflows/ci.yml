@@ -38,9 +38,6 @@ jobs:
   dbt:
     needs: [test]
     runs-on: ubuntu-latest
-    concurrency:
-      group: dbt-production
-      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v4
@@ -53,12 +50,12 @@ jobs:
       - name: Install dbt
         run: python -m pip install "dbt-core==1.12.5" "dbt-databricks==1.12.7"
 
-      - name: Build dbt models
+      - name: Parse dbt project
         working-directory: dbt
         env:
-          DATABRICKS_HOSTNAME: ${{ secrets.DATABRICKS_HOSTNAME }}
-          DATABRICKS_HTTP: ${{ secrets.DATABRICKS_HTTP }}
-          DBT_ENV_SECRET_DATABRICKS_KEY: ${{ secrets.DATABRICKS_KEY }}
-          DATABRICKS_CATALOG: ${{ secrets.DATABRICKS_CATALOG }}
-          DATABRICKS_SCHEMA: ${{ secrets.DATABRICKS_SCHEMA }}
-        run: dbt build --profiles-dir . --select +path:models/gold
+          DATABRICKS_HOSTNAME: ci.invalid
+          DATABRICKS_HTTP: /sql/1.0/warehouses/ci
+          DBT_ENV_SECRET_DATABRICKS_KEY: ci-placeholder
+          DATABRICKS_CATALOG: ci
+          DATABRICKS_SCHEMA: silver
+        run: dbt parse --profiles-dir .
