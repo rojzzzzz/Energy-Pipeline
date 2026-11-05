@@ -43,13 +43,13 @@ def test_http_pages_to_raw_to_validation_and_merge(
     extraction.write_in_raw(demand_source["name"], rows, "2026-01-01T00", "2026-01-01T01")
     frame = preparation.read_raw_data("DOM")[demand_source["name"]]
     frame = preparation.config_columns(preparation.delete_overlap(frame, demand_source["silver"]["keys"]), demand_source)
-    result = load.load_source(frame, demand_source)
+    load.load_source(frame, demand_source)
 
     assert [request.url.params["offset"] for request in requests] == ["0", "1"]
     assert all(request.url.params["api_key"] == "test-api-key" for request in requests)
-    assert result == {"table_name": "test_catalog.silver.hourly_pjm_dom_demand",
-                      "mode": "incremental", "row_count": 2, "status": "loaded"}
-    query, parameters = warehouse[1].execute.call_args.args
+    query, parameters = next(call.args for call in warehouse[1].execute.call_args_list
+                             if call.args[0].startswith("MERGE"))
+    assert warehouse[1].execute.call_args.args == ("COMMIT",)
     assert "MERGE INTO `test_catalog`.`silver`.`hourly_pjm_dom_demand`" in query
     loaded_values = {parameters[offset]: parameters[offset + 3] for offset in range(0, len(parameters), 5)}
     assert loaded_values == {datetime(2026, 1, 1): 12000.0, datetime(2026, 1, 1, 1): 12500.0}
@@ -142,7 +142,7 @@ def extraction_config():
                 "ingestion": {"initial_start": "2026-01-01T00", "window": "month", "page_size": 2, "overlap": 24}}}}
 
 
-def test_backfill_then_incremental_persists_revisions_and_advances_watermark(isolated_paths, monkeypatch):
+def test_backfill_then_incremental_persists_revisions_and_stages_watermark(isolated_paths, monkeypatch):
     monkeypatch.setattr(extraction, "extraction_end", lambda: datetime(2026, 1, 2))
     fetch = AsyncMock(side_effect=[
         [{"period": "2026-01-01T23", "value": 10}],
@@ -150,10 +150,16 @@ def test_backfill_then_incremental_persists_revisions_and_advances_watermark(iso
     ])
     monkeypatch.setattr(extraction, "extract_window", fetch)
     config = extraction_config()
+    path = isolated_paths / "state.json"
+    pending = isolated_paths / "state.json.tmp"
     asyncio.run(extraction.run_backfill(config))
+    assert extraction.get_state() is None
+    assert json.loads(pending.read_text())["demand"]["watermark"] == "2026-01-01T23"
+    pending.replace(path)
     assert extraction.get_state()["demand"]["watermark"] == "2026-01-01T23"
     asyncio.run(extraction.run_incremental(config))
-    assert extraction.get_state()["demand"]["watermark"] == "2026-01-02T00"
+    assert extraction.get_state()["demand"]["watermark"] == "2026-01-01T23"
+    assert json.loads(pending.read_text())["demand"]["watermark"] == "2026-01-02T00"
     assert fetch.await_args.kwargs["start"] == "2026-01-01T00"  # overlap clipped to initial_start
     rows = [json.loads(line) for line in (isolated_paths / "raw/demand.jsonl").read_text().splitlines()]
     assert [row["value"] for row in rows] == [10, 11, 12]
@@ -161,12 +167,13 @@ def test_backfill_then_incremental_persists_revisions_and_advances_watermark(iso
 
 def test_failed_incremental_extraction_does_not_advance_checkpoint(isolated_paths, monkeypatch):
     state = {"demand": {"watermark": "2026-01-01T23", "last_run": "previous-run"}}
-    extraction.create_state(state)
+    (isolated_paths / "state.json").write_text(json.dumps(state), encoding="utf-8")
     monkeypatch.setattr(extraction, "extraction_end", lambda: datetime(2026, 1, 2))
     monkeypatch.setattr(extraction, "extract_window", AsyncMock(side_effect=RuntimeError("bad page")))
     with pytest.raises(RuntimeError, match="bad page"):
         asyncio.run(extraction.run_incremental(extraction_config()))
     assert extraction.get_state() == state
+    assert not (isolated_paths / "state.json.tmp").exists()
     assert not list((isolated_paths / "raw").iterdir())
 
 

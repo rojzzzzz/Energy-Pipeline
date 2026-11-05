@@ -61,20 +61,41 @@ def test_merge_batches_rows_and_parameterizes_values(warehouse):
     assert "WHEN MATCHED THEN UPDATE SET t.`text` = s.`text`" in calls[0][0]
     assert "WHEN NOT MATCHED THEN INSERT" in calls[0][0]
 
+    queries = [call.args[0] for call in warehouse[1].execute.call_args_list]
+    begin = queries.index("BEGIN TRANSACTION")
+    assert all(index < begin for index, query in enumerate(queries) if query.startswith("CREATE"))
+    assert all(index > begin for index, query in enumerate(queries) if query.startswith("MERGE"))
+    assert queries[-1] == "COMMIT"
+
 
 def test_key_only_table_omits_update_clause(warehouse):
     load.upload_dataframe(pd.DataFrame({"id": [1]}), "catalog.silver.ids", "backfill",
                           keys=["id"], schema={"id": "int"})
-    query, params = warehouse[1].execute.call_args.args
+    query, params = next(call.args for call in warehouse[1].execute.call_args_list
+                         if call.args[0].startswith("MERGE"))
     assert "WHEN MATCHED" not in query
     assert params == [1]
 
 
-def test_warehouse_errors_propagate_and_resources_close(warehouse):
+@pytest.mark.parametrize("failure", ["setup", "second_batch", "commit"])
+def test_warehouse_errors_propagate_and_resources_close(warehouse, failure):
     connect, cursor = warehouse
-    cursor.execute.side_effect = RuntimeError("warehouse unavailable")
+    merges = 0
+
+    def execute(query, *args):
+        nonlocal merges
+        if query.startswith("MERGE"):
+            merges += 1
+        if (failure == "setup" or
+                failure == "second_batch" and query.startswith("MERGE") and merges == 2 or
+                failure == "commit" and query == "COMMIT"):
+            raise RuntimeError("warehouse unavailable")
+
+    cursor.execute.side_effect = execute
     with pytest.raises(RuntimeError, match="warehouse unavailable"):
-        load.upload_dataframe(pd.DataFrame({"id": [1]}), "catalog.silver.ids", "incremental",
+        load.upload_dataframe(pd.DataFrame({"id": range(101)}), "catalog.silver.ids", "incremental",
                               keys=["id"], schema={"id": "int"})
+    if failure != "commit":
+        assert "COMMIT" not in [call.args[0] for call in cursor.execute.call_args_list]
     connect.return_value.__exit__.assert_called_once()
     connect.return_value.__enter__.return_value.cursor.return_value.__exit__.assert_called_once()

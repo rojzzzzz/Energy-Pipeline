@@ -41,11 +41,20 @@ def test_windows_are_empty_when_start_is_after_end(periods):
     assert list(periods(datetime(2026, 2, 1), datetime(2026, 1, 1))) == []
 
 
-def test_state_round_trip_and_missing_state(tmp_path, monkeypatch):
-    monkeypatch.setattr(extraction, "STATE_PATH", tmp_path / "state.json")
-    assert extraction.get_state() is None
+@pytest.mark.parametrize("previous", [None, {"demand": {"watermark": "2025-12-31T23"}}])
+def test_state_is_pending_until_committed(tmp_path, monkeypatch, previous):
+    path = tmp_path / "state.json"
+    monkeypatch.setattr(extraction, "STATE_PATH", path)
+    if previous is not None:
+        path.write_text(json.dumps(previous), encoding="utf-8")
     state = {"demand": {"watermark": "2026-01-01T00"}}
     extraction.create_state(state)
+
+    assert extraction.get_state() == previous
+    pending = path.with_suffix(".json.tmp")
+    assert json.loads(pending.read_text(encoding="utf-8")) == state
+
+    pending.replace(path)
     assert extraction.get_state() == state
 
 

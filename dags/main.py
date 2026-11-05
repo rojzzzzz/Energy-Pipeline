@@ -2,6 +2,7 @@
 
 from airflow.sdk import dag, task
 import pendulum
+import os
 
 
 @dag(
@@ -22,7 +23,7 @@ def complete_pipeline():
     @task(do_xcom_push=False)
     def prepare_and_load():
         import yaml
-        from config import DATA_CONTRACT_PATH
+        from config import DATA_CONTRACT_PATH, STATE_PATH
         from prepare.preparation import prepare_dataframes
         from load.load import load_source
 
@@ -33,6 +34,8 @@ def complete_pipeline():
         for datasets in sources.values():
             for source in datasets:
                 load_source(dataframes[source["name"]], source)
+
+        os.replace(f"{STATE_PATH}.tmp", STATE_PATH)
 
     @task.bash(do_xcom_push=False, skip_on_exit_code=None)
     def build_gold():

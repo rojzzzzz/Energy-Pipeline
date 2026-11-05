@@ -34,3 +34,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - run: docker build -t energy:pipeline .
+
+  dbt:
+    needs: [test]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dbt-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dbt
+        run: python -m pip install "dbt-core==1.12.5" "dbt-databricks==1.12.7"
+
+      - name: Build dbt models
+        working-directory: dbt
+        env:
+          DATABRICKS_HOSTNAME: ${{ secrets.DATABRICKS_HOSTNAME }}
+          DATABRICKS_HTTP: ${{ secrets.DATABRICKS_HTTP }}
+          DBT_ENV_SECRET_DATABRICKS_KEY: ${{ secrets.DATABRICKS_KEY }}
+          DATABRICKS_CATALOG: ${{ secrets.DATABRICKS_CATALOG }}
+          DATABRICKS_SCHEMA: ${{ secrets.DATABRICKS_SCHEMA }}
+        run: dbt build --profiles-dir . --select +path:models/gold

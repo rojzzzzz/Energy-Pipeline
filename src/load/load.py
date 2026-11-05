@@ -1,6 +1,6 @@
+from datetime import datetime, timezone
 from config import get_env
 from databricks import sql
-from datetime import datetime, timezone
 import pandas as pd
 import logging
 
@@ -53,11 +53,11 @@ def upload_dataframe(df: pd.DataFrame, table_name: str, mode: str, *,
                         http_path=get_env('DATABRICKS_HTTP'),
                         access_token=get_env('DATABRICKS_KEY')) as connection:
             with connection.cursor() as cursor:
-
                 cursor.execute("SET TIME ZONE 'UTC'")
                 cursor.execute(f"CREATE CATALOG IF NOT EXISTS {get_env('DATABRICKS_CATALOG')}")
                 cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {get_env('DATABRICKS_CATALOG')}.{get_env('DATABRICKS_SCHEMA')}")
                 cursor.execute(f"CREATE TABLE IF NOT EXISTS {target} ({create_columns}) USING DELTA TBLPROPERTIES ('delta.columnMapping.mode' = 'name')")
+                cursor.execute("BEGIN TRANSACTION")
 
                 for offset in range(0, len(df), 100):
                     batch = df[names].iloc[offset:offset + 100]
@@ -68,7 +68,10 @@ def upload_dataframe(df: pd.DataFrame, table_name: str, mode: str, *,
                     cursor.execute(f'MERGE INTO {target} AS t '
                                    f'USING (SELECT * FROM VALUES {placeholders} AS batch ({columns})) AS s '
                                     f'ON {matches}{matched} '
-                                    f'WHEN NOT MATCHED THEN INSERT ({columns}) VALUES ({values})', parameters)
+                                    f'WHEN NOT MATCHED THEN INSERT ({columns}) VALUES ({values});', parameters)
+
+                cursor.execute("COMMIT")
+
     except Exception as error:
         logger.error(f'Load failed for {table_name}: {type(error).__name__}')
         raise
@@ -76,7 +79,7 @@ def upload_dataframe(df: pd.DataFrame, table_name: str, mode: str, *,
     return result
 
 
-def load_source(df: pd.DataFrame, source: dict, mode: str = 'incremental') -> dict:
+def load_source(df: pd.DataFrame, source: dict, mode: str = 'incremental') -> None:
     """Validate one prepared source, then upsert it into its existing destination."""
     from validate.validate import run_validation
 
@@ -87,5 +90,5 @@ def load_source(df: pd.DataFrame, source: dict, mode: str = 'incremental') -> di
 
 
     table_name = f"{get_env('DATABRICKS_CATALOG')}.{get_env('DATABRICKS_SCHEMA')}.{source['name']}"
-    return upload_dataframe(df, table_name, mode, keys=source['silver']['keys'],
+    upload_dataframe(df, table_name, mode, keys=source['silver']['keys'],
                             schema={col['name']: col['type'] for col in source['silver']['schema']})

@@ -51,7 +51,7 @@ def get_state() -> dict | None:
         raise
 
 def create_state(state: dict):
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    with open(f"{STATE_PATH}.tmp", "w", encoding="utf-8") as f:
         json.dump(state, f, indent=4)
 
 def write_in_raw(dataset_name: str, rows: list[dict], window_start: str, window_end: str):
