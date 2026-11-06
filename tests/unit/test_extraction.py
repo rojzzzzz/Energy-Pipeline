@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from unittest.mock import AsyncMock
 
+from databricks.sql.exc import ServerOperationError
 import httpx
 import pytest
 
@@ -64,6 +65,43 @@ def test_corrupt_state_is_not_silently_discarded(tmp_path, monkeypatch):
     monkeypatch.setattr(extraction, "STATE_PATH", path)
     with pytest.raises(json.JSONDecodeError):
         extraction.get_state()
+
+
+def test_database_checkpoint_takes_precedence(tmp_path, monkeypatch, checkpoint_warehouse):
+    path = tmp_path / "state.json"
+    path.write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(extraction, "STATE_PATH", path)
+    watermark = datetime(2026, 1, 2)
+    checkpoint_warehouse[1].fetchall.return_value = [("demand", watermark, watermark)]
+    assert extraction.get_state() == {"demand": {"watermark": watermark, "last_run": watermark}}
+
+
+@pytest.mark.parametrize("has_file", [False, True])
+def test_missing_state_table_uses_local_fallback(tmp_path, monkeypatch, checkpoint_warehouse, has_file):
+    path = tmp_path / "state.json"
+    state = {"demand": {"watermark": "2026-01-01T00"}}
+    if has_file:
+        path.write_text(json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(extraction, "STATE_PATH", path)
+    checkpoint_warehouse[1].execute.side_effect = ServerOperationError("[TABLE_OR_VIEW_NOT_FOUND] eia_state")
+    assert extraction.get_state() == (state if has_file else None)
+
+
+@pytest.mark.parametrize("error", [
+    ServerOperationError("[INSUFFICIENT_PERMISSIONS] denied"),
+    ServerOperationError("[PARSE_SYNTAX_ERROR] invalid SQL"),
+    ServerOperationError("[SCHEMA_NOT_FOUND] silver"),
+    ConnectionError("warehouse unavailable"),
+    ValueError("invalid configuration"),
+])
+def test_database_failures_do_not_use_local_state(tmp_path, monkeypatch, checkpoint_warehouse, error):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"demand": {"watermark": "2026-01-01T00"}}), encoding="utf-8")
+    monkeypatch.setattr(extraction, "STATE_PATH", path)
+    checkpoint_warehouse[0].side_effect = error
+    with pytest.raises(type(error)) as caught:
+        extraction.get_state()
+    assert caught.value is error
 
 
 def run_window(monkeypatch, responses, **overrides):

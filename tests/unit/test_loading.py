@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import json
 
 import numpy as np
 import pandas as pd
@@ -75,6 +76,76 @@ def test_key_only_table_omits_update_clause(warehouse):
                          if call.args[0].startswith("MERGE"))
     assert "WHEN MATCHED" not in query
     assert params == [1]
+
+
+@pytest.mark.parametrize("row_count", [10000, 10001, 100001])
+def test_large_upload_stays_within_transaction_write_limit(warehouse, row_count):
+    cursor = warehouse[1]
+    writes = 0
+
+    def execute(query, *args):
+        nonlocal writes
+        if query.startswith("MERGE"):
+            writes += 1
+            if writes > 100:
+                raise RuntimeError("MAX_INTERMEDIATE_COMMITS_EXCEEDED")
+
+    cursor.execute.side_effect = execute
+    frame = pd.DataFrame({"id": range(row_count)})
+    load.upload_dataframe(frame, "catalog.silver.ids", "incremental",
+                          keys=["id"], schema={"id": "int"})
+
+    calls = [call.args for call in cursor.execute.call_args_list if call.args[0].startswith("MERGE")]
+    assert len(calls) <= 100
+    assert [value for _, parameters in calls for value in parameters] == list(range(row_count))
+    assert [call.args for call in cursor.execute.call_args_list].count(("COMMIT",)) == 1
+    assert cursor.execute.call_args.args == ("COMMIT",)
+
+
+@pytest.mark.parametrize("dataset,period,expected", [
+    ("demand", "2026-01-01T23", datetime(2026, 1, 1, 23)),
+    ("price", "2026-01", datetime(2026, 1, 1)),
+])
+def test_api_checkpoint_uses_extracted_period_and_dataset_key(
+    warehouse, tmp_path, monkeypatch, dataset, period, expected,
+):
+    path = tmp_path / "state.json"
+    monkeypatch.setattr(load, "STATE_PATH", path, raising=False)
+    path.with_suffix(".json.tmp").write_text(json.dumps({dataset: {"watermark": period}}), encoding="utf-8")
+
+    load.upload_dataframe(pd.DataFrame({"id": [1]}), f"test_catalog.silver.{dataset}", "incremental",
+                          keys=["id"], schema={"id": "int"}, api=True)
+
+    calls = [call.args for call in warehouse[1].execute.call_args_list]
+    checkpoint = next(call for call in calls if call[0].startswith("MERGE INTO test_catalog.silver.eia_state"))
+    assert checkpoint[1] == [dataset, expected]
+    assert "current_timestamp() AS watermark" not in checkpoint[0]
+    assert calls.index(checkpoint) < calls.index(("COMMIT",))
+
+
+def test_missing_pending_api_checkpoint_blocks_upload(warehouse, tmp_path, monkeypatch):
+    monkeypatch.setattr(load, "STATE_PATH", tmp_path / "missing.json", raising=False)
+    with pytest.raises(FileNotFoundError):
+        load.upload_dataframe(pd.DataFrame({"id": [1]}), "test_catalog.silver.demand", "incremental",
+                              keys=["id"], schema={"id": "int"}, api=True)
+    warehouse[0].assert_not_called()
+
+
+def test_checkpoint_write_failure_does_not_commit_data(warehouse, tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    monkeypatch.setattr(load, "STATE_PATH", path, raising=False)
+    path.with_suffix(".json.tmp").write_text(json.dumps({"demand": {"watermark": "2026-01-01T00"}}), encoding="utf-8")
+    cursor = warehouse[1]
+
+    def execute(query, *args):
+        if query.startswith("MERGE INTO test_catalog.silver.eia_state"):
+            raise RuntimeError("checkpoint write failed")
+
+    cursor.execute.side_effect = execute
+    with pytest.raises(RuntimeError, match="checkpoint write failed"):
+        load.upload_dataframe(pd.DataFrame({"id": [1]}), "test_catalog.silver.demand", "incremental",
+                              keys=["id"], schema={"id": "int"}, api=True)
+    assert "COMMIT" not in [call.args[0] for call in cursor.execute.call_args_list]
 
 
 @pytest.mark.parametrize("failure", ["setup", "second_batch", "commit"])

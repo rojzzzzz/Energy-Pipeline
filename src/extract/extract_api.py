@@ -1,9 +1,11 @@
 """Makes the requests to the API and returns the data as a DataFrame"""
 
 from config import STATE_PATH, RAW_FILES_PATH, EIA_CONFIG_PATH, get_env
+from databricks.sql.exc import ServerOperationError
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from tempfile import NamedTemporaryFile
+from databricks import sql
 from pathlib import Path
 import logging
 import asyncio
@@ -31,7 +33,23 @@ def get_config() -> dict:
         raise
 
 def get_state() -> dict | None:
-    """Reads the state file and returns its content as a dict. Returns None if the file doesn't exist"""
+    """Read committed database state, falling back to the file only when state is missing."""
+
+    try:
+        with sql.connect(server_hostname=get_env('DATABRICKS_HOSTNAME'),
+                            http_path=get_env('DATABRICKS_HTTP'),
+                            access_token=get_env('DATABRICKS_KEY')) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(f"SELECT dataset, watermark, last_run FROM {get_env('DATABRICKS_CATALOG')}.{get_env('DATABRICKS_SCHEMA')}.{get_env('DATABRICKS_STATE_TABLE')}")
+                state = cursor.fetchall()
+
+                if state:
+                    return {row[0]: {'watermark': row[1], 'last_run': row[2]} for row in state}
+
+    except ServerOperationError as e:
+        if '[TABLE_OR_VIEW_NOT_FOUND]' not in str(e):
+            raise
+        logger.info("State table not found; checking the local state file")
 
     state_path = STATE_PATH
     if not state_path.exists():
@@ -259,18 +277,21 @@ async def run_backfill(eia_config: dict):
     create_state(state)
 
 async def run_incremental(eia_config: dict):
-    state = get_state()
+    state = {name: entry for name, entry in (get_state() or {}).items()
+             if name in eia_config['datasets']}
     max_retries = eia_config['max_retries']
     timeout = eia_config['timeout_seconds']
 
     for dataset_name, dataset in eia_config['datasets'].items():
-        dataset_state = state[dataset_name]
         endpoint = dataset['endpoint']
 
-        watermark = dataset_state['watermark']
         frequency = dataset['params']['frequency']
         ingestion_config = dataset['ingestion']
         params = dataset['params']
+        dataset_state = state.setdefault(dataset_name, {'watermark': ingestion_config['initial_start']})
+        watermark = dataset_state['watermark']
+        if isinstance(watermark, datetime):
+            watermark = format_period(extraction_end(watermark), frequency)
 
         if frequency == "hourly":
             watermark_dt = datetime.strptime(watermark, "%Y-%m-%dT%H")

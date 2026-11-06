@@ -28,6 +28,26 @@ def demand_rows():
     ]
 
 
+@pytest.fixture(autouse=True)
+def checkpoint_warehouse(monkeypatch):
+    from unittest.mock import MagicMock
+    from extract import extract_api
+
+    connect = MagicMock(name="checkpoint_connect")
+    cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = []
+    monkeypatch.setattr(extract_api.sql, "connect", connect)
+    monkeypatch.setattr(extract_api, "get_env", {
+        "DATABRICKS_HOSTNAME": "warehouse.invalid",
+        "DATABRICKS_HTTP": "/sql/test",
+        "DATABRICKS_KEY": "test-token",
+        "DATABRICKS_CATALOG": "test_catalog",
+        "DATABRICKS_SCHEMA": "silver",
+        "DATABRICKS_STATE_TABLE": "eia_state",
+    }.__getitem__)
+    return connect, cursor
+
+
 @pytest.fixture
 def isolated_paths(tmp_path, monkeypatch):
     from extract import extract_api
@@ -71,5 +91,6 @@ def warehouse(monkeypatch):
         "DATABRICKS_KEY": "test-token",
         "DATABRICKS_CATALOG": "test_catalog",
         "DATABRICKS_SCHEMA": "silver",
+        "DATABRICKS_STATE_TABLE": "eia_state",
     }.__getitem__)
     return connect, cursor

@@ -177,6 +177,33 @@ def test_failed_incremental_extraction_does_not_advance_checkpoint(isolated_path
     assert not list((isolated_paths / "raw").iterdir())
 
 
+@pytest.mark.parametrize("frequency,watermark,initial,expected_start,observed", [
+    ("hourly", datetime(2026, 1, 2), "2026-01-01T00", "2026-01-01T23", "2026-01-02T01"),
+    ("monthly", datetime(2026, 2, 1), "2026-01", "2026-01", "2026-02"),
+])
+def test_partial_database_state_backfills_only_missing_dataset(
+    isolated_paths, monkeypatch, checkpoint_warehouse, frequency, watermark, initial, expected_start, observed,
+):
+    config = extraction_config()
+    known = config["datasets"]["demand"]
+    known["params"]["frequency"] = frequency
+    known["ingestion"].update(initial_start=initial, overlap=1, window="year")
+    config["datasets"]["new_source"] = {**known, "name": "new_source"}
+    checkpoint_warehouse[1].fetchall.return_value = [("demand", watermark, watermark), ("retired_source", watermark, watermark)]
+    normalize_end = extraction.extraction_end
+    monkeypatch.setattr(extraction, "extraction_end", lambda end=None: normalize_end(end or datetime(2026, 2, 2)))
+    fetch = AsyncMock(side_effect=[[{"period": observed, "value": 10}], [{"period": observed, "value": 20}]])
+    monkeypatch.setattr(extraction, "extract_window", fetch)
+
+    asyncio.run(extraction.run_incremental(config))
+
+    assert [call.kwargs["start"] for call in fetch.await_args_list] == [expected_start, initial]
+    pending = json.loads((isolated_paths / "state.json.tmp").read_text())
+    assert set(pending) == {"demand", "new_source"}
+    assert all(entry["watermark"] == observed for entry in pending.values())
+    assert extraction.get_state()["demand"]["watermark"] == watermark
+
+
 @pytest.mark.parametrize("problem,error,message", [
     ("missing_frame", TypeError, "must be a pandas DataFrame"),
     ("empty_frame", ValueError, "dataframe is empty"),

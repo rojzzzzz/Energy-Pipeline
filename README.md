@@ -9,12 +9,12 @@ The pipeline takes data from the EIA API and local NOAA and PJM files through Py
 
 The sources and quality rules are defined in the [data contract](data/config/data_contract.yml):
 
-| Source | Data | Coverage |
-| --- | --- | --- |
-| EIA API | Hourly electricity demand | PJM Dominion region |
-| EIA API | Monthly residential electricity prices | Virginia |
-| NOAA files | Weather observations | Dulles station |
-| PJM workbook | Historical July peaks and forecasts by release year | DOM sheet, labeled VEPCO |
+| Source | Where to find | Data | Coverage |
+| --- | --- | --- | --- |
+| EIA API | [EIA Ingestion Contract](data/config/eia_ingestion.yml) | Hourly electricity demand | PJM Dominion region |
+| EIA API | [EIA Ingestion Contract](data/config/eia_ingestion.yml) | Monthly residential electricity prices | Virginia |
+| NOAA files | [Drive](https://drive.google.com/drive/folders/14F2AmOePus4yB4ZrqqhKI8k-nIAVtdsw?usp=sharing) | Weather observations | Dulles station |
+| PJM workbook | [Link](https://www.pjm.com/-/media/DotCom/planning/res-adeq/load-forecast/2026-accuracy-report.xlsx) | Historical July peaks and forecasts by release year | DOM sheet, labeled VEPCO |
 
 ## How the pipeline works
 

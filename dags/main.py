@@ -33,7 +33,8 @@ def complete_pipeline():
         dataframes = prepare_dataframes(sources)
         for datasets in sources.values():
             for source in datasets:
-                load_source(dataframes[source["name"]], source)
+                load_source(dataframes[source["name"]], source,
+                            api=True if not source.get("connection") else False)
 
         os.replace(f"{STATE_PATH}.tmp", STATE_PATH)
 
